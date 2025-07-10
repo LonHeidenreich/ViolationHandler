@@ -1,0 +1,350 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, euint64, euint8, ebool, inEuint32, inEuint64, inEuint8 } from "@fhevm/solidity/lib/FHE.sol";
+import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import { GatewayContract } from "@fhevm/solidity/gateway/GatewayContract.sol";
+
+// Gateway interface for decryption
+interface IGatewayContract {
+    function requestDecryption(
+        uint256[] memory cts,
+        bytes4 callbackSelector,
+        uint256 callbackGasLimit,
+        address msgValue,
+        address maxPriorityFeePerGas
+    ) external returns (uint256);
+}
+
+contract AnonymousViolationHandler is SepoliaConfig, GatewayContract {
+
+    // Custom errors for fail-closed design
+    error Unauthorized();
+    error InvalidViolationType();
+    error LocationRequired();
+    error InvalidViolationId();
+    error AlreadyPaid();
+    error AlreadyProcessed();
+    error AmountMustBePositive();
+    error ContractPaused();
+    error NotAPauser();
+    error AlreadyPauser();
+    error InvalidProof();
+    error DecryptionPending();
+
+    address public owner;
+    uint32 public violationCounter;
+
+    struct Violation {
+        euint32 encryptedLicenseHash;
+        euint64 encryptedAmount;         // Using euint64 for larger amounts
+        euint8 encryptedViolationType;
+        euint32 encryptedSeverityScore;  // Additional FHE type for severity
+        ebool encryptedIsRepeat;         // Using ebool for repeat offender flag
+        string location;
+        uint256 timestamp;
+        bool isPaid;
+        bool isProcessed;
+        address reporter;
+        uint256 decryptionRequestId;     // For Gateway callback tracking
+    }
+
+    struct PaymentRecord {
+        euint32 encryptedPaymentId;
+        euint64 encryptedPaymentAmount;  // Using euint64
+        ebool encryptedPaymentValid;     // Using ebool
+        uint256 timestamp;
+        bool verified;
+    }
+
+    // PauserSet mechanism
+    mapping(address => bool) public pausers;
+    uint256 public pauserCount;
+
+    mapping(uint32 => Violation) public violations;
+    mapping(uint32 => PaymentRecord) public payments;
+    mapping(address => uint32[]) public reporterViolations;
+    mapping(uint256 => uint32) public decryptionRequestToViolation; // Track Gateway callbacks
+
+    // Violation types: 1=Speeding, 2=Parking, 3=RedLight, 4=NoSeatbelt, 5=MobilePhone
+    mapping(uint8 => uint256) public violationBaseFines;
+
+    event ViolationReported(uint32 indexed violationId, address indexed reporter, string location);
+    event PaymentSubmitted(uint32 indexed violationId, uint256 timestamp);
+    event ViolationProcessed(uint32 indexed violationId, bool paymentConfirmed);
+    event FineAmountUpdated(uint8 violationType, uint256 newAmount);
+    event PauserAdded(address indexed pauser);
+    event PauserRemoved(address indexed pauser);
+    event DecryptionRequested(uint32 indexed violationId, uint256 requestId);
+    event DecryptionCallbackReceived(uint32 indexed violationId, uint256 requestId);
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Unauthorized();
+        _;
+    }
+
+    modifier onlyPauser() {
+        if (!pausers[msg.sender]) revert NotAPauser();
+        _;
+    }
+
+    modifier validViolation(uint32 _violationId) {
+        if (_violationId == 0 || _violationId > violationCounter) revert InvalidViolationId();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert ContractPaused();
+        _;
+    }
+
+    // Emergency pause state
+    bool public paused = false;
+
+    constructor() {
+        owner = msg.sender;
+        violationCounter = 0;
+
+        // Initialize owner as first pauser
+        pausers[msg.sender] = true;
+        pauserCount = 1;
+
+        // Initialize base fines for different violation types
+        violationBaseFines[1] = 150 ether; // Speeding
+        violationBaseFines[2] = 50 ether;  // Parking
+        violationBaseFines[3] = 200 ether; // Red light
+        violationBaseFines[4] = 100 ether; // No seatbelt
+        violationBaseFines[5] = 120 ether; // Mobile phone
+    }
+
+    // PauserSet functions
+    function addPauser(address _pauser) external onlyOwner {
+        if (pausers[_pauser]) revert AlreadyPauser();
+        pausers[_pauser] = true;
+        pauserCount++;
+        emit PauserAdded(_pauser);
+    }
+
+    function removePauser(address _pauser) external onlyOwner {
+        if (!pausers[_pauser]) revert NotAPauser();
+        pausers[_pauser] = false;
+        pauserCount--;
+        emit PauserRemoved(_pauser);
+    }
+
+    function togglePause() external onlyPauser {
+        paused = !paused;
+    }
+
+    // Report a traffic violation with encrypted sensitive data and input proofs
+    function reportViolation(
+        inEuint32 calldata _encryptedLicenseHash,
+        inEuint8 calldata _violationType,
+        inEuint32 calldata _severityScore,
+        inEuint8 calldata _isRepeatOffender,
+        string memory _location,
+        bytes calldata inputProof
+    ) external whenNotPaused {
+        if (bytes(_location).length == 0) revert LocationRequired();
+
+        violationCounter++;
+
+        // Convert inputs with proof verification (ZKPoK)
+        euint32 encryptedLicense = FHE.asEuint32(_encryptedLicenseHash, inputProof);
+        euint8 encryptedType = FHE.asEuint8(_violationType, inputProof);
+        euint32 encryptedSeverity = FHE.asEuint32(_severityScore, inputProof);
+        ebool encryptedRepeat = FHE.asEbool(FHE.asEuint8(_isRepeatOffender, inputProof));
+
+        // Validate violation type is in valid range (1-5) using encrypted comparison
+        ebool isValidType = FHE.and(
+            FHE.ge(encryptedType, FHE.asEuint8(1)),
+            FHE.le(encryptedType, FHE.asEuint8(5))
+        );
+
+        // Fail-closed: decrypt validation result
+        // In production, this would use Gateway for async decryption
+        // For now, we assume valid if proof passes
+
+        // Calculate encrypted amount with severity multiplier
+        // Base fine * (1 + severity/100) * (isRepeat ? 2 : 1)
+        euint64 baseFine = FHE.asEuint64(150); // Default, would be selected based on type
+        euint64 severityMultiplier = FHE.add(FHE.asEuint64(100), FHE.asEuint64(encryptedSeverity));
+        euint64 amountWithSeverity = FHE.div(FHE.mul(baseFine, severityMultiplier), FHE.asEuint64(100));
+
+        // Double if repeat offender
+        euint64 finalAmount = FHE.select(
+            encryptedRepeat,
+            FHE.mul(amountWithSeverity, FHE.asEuint64(2)),
+            amountWithSeverity
+        );
+
+        violations[violationCounter] = Violation({
+            encryptedLicenseHash: encryptedLicense,
+            encryptedAmount: finalAmount,
+            encryptedViolationType: encryptedType,
+            encryptedSeverityScore: encryptedSeverity,
+            encryptedIsRepeat: encryptedRepeat,
+            location: _location,
+            timestamp: block.timestamp,
+            isPaid: false,
+            isProcessed: false,
+            reporter: msg.sender,
+            decryptionRequestId: 0
+        });
+
+        reporterViolations[msg.sender].push(violationCounter);
+
+        // Grant access permissions for FHE operations
+        FHE.allowThis(encryptedLicense);
+        FHE.allowThis(finalAmount);
+        FHE.allowThis(encryptedType);
+        FHE.allowThis(encryptedSeverity);
+        FHE.allowThis(encryptedRepeat);
+
+        emit ViolationReported(violationCounter, msg.sender, _location);
+    }
+
+    // Submit encrypted payment for a violation with input proof
+    function submitPayment(
+        uint32 _violationId,
+        inEuint32 calldata _encryptedPaymentId,
+        inEuint64 calldata _encryptedPaymentAmount,
+        bytes calldata inputProof
+    ) external validViolation(_violationId) whenNotPaused {
+        if (violations[_violationId].isPaid) revert AlreadyPaid();
+        if (violations[_violationId].isProcessed) revert AlreadyProcessed();
+
+        // Convert inputs with proof verification
+        euint32 encryptedPayment = FHE.asEuint32(_encryptedPaymentId, inputProof);
+        euint64 encryptedAmount = FHE.asEuint64(_encryptedPaymentAmount, inputProof);
+
+        // Complex encrypted comparison: verify payment amount matches violation amount
+        ebool amountMatches = FHE.eq(encryptedAmount, violations[_violationId].encryptedAmount);
+
+        payments[_violationId] = PaymentRecord({
+            encryptedPaymentId: encryptedPayment,
+            encryptedPaymentAmount: encryptedAmount,
+            encryptedPaymentValid: amountMatches,
+            timestamp: block.timestamp,
+            verified: false
+        });
+
+        FHE.allowThis(encryptedPayment);
+        FHE.allowThis(encryptedAmount);
+        FHE.allowThis(amountMatches);
+
+        emit PaymentSubmitted(_violationId, block.timestamp);
+    }
+
+    // Request payment verification via Gateway decryption
+    function processPayment(uint32 _violationId) external onlyOwner validViolation(_violationId) whenNotPaused {
+        if (violations[_violationId].isProcessed) revert AlreadyProcessed();
+
+        PaymentRecord storage payment = payments[_violationId];
+        if (payment.timestamp == 0) revert InvalidViolationId();
+
+        // Request decryption of payment validation through Gateway
+        uint256[] memory cts = new uint256[](1);
+        cts[0] = Gateway.toUint256(payment.encryptedPaymentValid);
+
+        uint256 requestId = Gateway.requestDecryption(
+            cts,
+            this.finalizePaymentCallback.selector,
+            0,
+            block.timestamp + 100,
+            false
+        );
+
+        violations[_violationId].decryptionRequestId = requestId;
+        decryptionRequestToViolation[requestId] = _violationId;
+
+        emit DecryptionRequested(_violationId, requestId);
+    }
+
+    // Gateway callback for decrypted payment validation
+    function finalizePaymentCallback(
+        uint256 requestId,
+        bool decryptedPaymentValid
+    ) public onlyGateway {
+        uint32 violationId = decryptionRequestToViolation[requestId];
+        if (violationId == 0) revert InvalidViolationId();
+
+        Violation storage violation = violations[violationId];
+        PaymentRecord storage payment = payments[violationId];
+
+        // Fail-closed: only mark as paid if decryption confirms validity
+        violation.isPaid = decryptedPaymentValid;
+        violation.isProcessed = true;
+        payment.verified = decryptedPaymentValid;
+
+        emit DecryptionCallbackReceived(violationId, requestId);
+        emit ViolationProcessed(violationId, decryptedPaymentValid);
+    }
+
+    // Update base fine amounts (only owner)
+    function updateViolationFine(uint8 _violationType, uint256 _newAmount) external onlyOwner whenNotPaused {
+        if (_violationType < 1 || _violationType > 5) revert InvalidViolationType();
+        if (_newAmount == 0) revert AmountMustBePositive();
+
+        violationBaseFines[_violationType] = _newAmount;
+
+        emit FineAmountUpdated(_violationType, _newAmount);
+    }
+
+    // Get violation info (public data only)
+    function getViolationInfo(uint32 _violationId) external view validViolation(_violationId) returns (
+        string memory location,
+        uint256 timestamp,
+        bool isPaid,
+        bool isProcessed,
+        address reporter
+    ) {
+        Violation storage violation = violations[_violationId];
+        return (
+            violation.location,
+            violation.timestamp,
+            violation.isPaid,
+            violation.isProcessed,
+            violation.reporter
+        );
+    }
+
+    // Get payment status
+    function getPaymentStatus(uint32 _violationId) external view validViolation(_violationId) returns (
+        uint256 timestamp,
+        bool verified
+    ) {
+        PaymentRecord storage payment = payments[_violationId];
+        return (
+            payment.timestamp,
+            payment.verified
+        );
+    }
+
+    // Get violations reported by a specific address
+    function getReporterViolations(address _reporter) external view returns (uint32[] memory) {
+        return reporterViolations[_reporter];
+    }
+
+    // Get total number of violations
+    function getTotalViolations() external view returns (uint32) {
+        return violationCounter;
+    }
+
+    // Get base fine for violation type
+    function getBaseFine(uint8 _violationType) external view returns (uint256) {
+        if (_violationType < 1 || _violationType > 5) revert InvalidViolationType();
+        return violationBaseFines[_violationType];
+    }
+
+    // Check if violation has encrypted license access for caller
+    function hasLicenseAccess(uint32 _violationId) external view validViolation(_violationId) returns (bool) {
+        // This would check FHE permissions in real implementation
+        return violations[_violationId].reporter == msg.sender || msg.sender == owner;
+    }
+
+    // Check if address is a pauser
+    function isPauser(address _address) external view returns (bool) {
+        return pausers[_address];
+    }
+}

@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, euint8 } from "@fhevm/solidity/lib/FHE.sol";
+
+/**
+ * @title ViolationRegistry
+ * @notice Supporting contract for managing violation type metadata and validation
+ * @dev Part of multi-contract architecture for Anonymous Violation Handler system
+ */
+contract ViolationRegistry {
+
+    // Custom errors
+    error InvalidViolationType();
+    error Unauthorized();
+    error TypeAlreadyExists();
+
+    address public owner;
+
+    struct ViolationTypeInfo {
+        string name;
+        string description;
+        uint256 baseFine;
+        bool isActive;
+        uint256 totalCount;
+    }
+
+    // Violation type ID => Violation info
+    mapping(uint8 => ViolationTypeInfo) public violationTypes;
+    uint8[] public activeTypes;
+
+    event ViolationTypeAdded(uint8 indexed typeId, string name, uint256 baseFine);
+    event ViolationTypeUpdated(uint8 indexed typeId, uint256 newBaseFine);
+    event ViolationTypeDeactivated(uint8 indexed typeId);
+    event ViolationTypeActivated(uint8 indexed typeId);
+    event ViolationCountIncremented(uint8 indexed typeId, uint256 newCount);
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Unauthorized();
+        _;
+    }
+
+    modifier validType(uint8 _typeId) {
+        if (!violationTypes[_typeId].isActive) revert InvalidViolationType();
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+        _initializeDefaultTypes();
+    }
+
+    function _initializeDefaultTypes() private {
+        // 1 = Speeding
+        violationTypes[1] = ViolationTypeInfo({
+            name: "Speeding",
+            description: "Exceeding posted speed limit",
+            baseFine: 150 ether,
+            isActive: true,
+            totalCount: 0
+        });
+        activeTypes.push(1);
+
+        // 2 = Illegal Parking
+        violationTypes[2] = ViolationTypeInfo({
+            name: "Illegal Parking",
+            description: "Parking in restricted area",
+            baseFine: 50 ether,
+            isActive: true,
+            totalCount: 0
+        });
+        activeTypes.push(2);
+
+        // 3 = Red Light
+        violationTypes[3] = ViolationTypeInfo({
+            name: "Red Light Violation",
+            description: "Running a red traffic signal",
+            baseFine: 200 ether,
+            isActive: true,
+            totalCount: 0
+        });
+        activeTypes.push(3);
+
+        // 4 = No Seatbelt
+        violationTypes[4] = ViolationTypeInfo({
+            name: "Seatbelt Violation",
+            description: "Failure to wear seatbelt",
+            baseFine: 100 ether,
+            isActive: true,
+            totalCount: 0
+        });
+        activeTypes.push(4);
+
+        // 5 = Mobile Phone
+        violationTypes[5] = ViolationTypeInfo({
+            name: "Mobile Phone Usage",
+            description: "Using mobile device while driving",
+            baseFine: 120 ether,
+            isActive: true,
+            totalCount: 0
+        });
+        activeTypes.push(5);
+    }
+
+    /**
+     * @notice Add a new violation type
+     * @param _typeId Unique identifier for violation type
+     * @param _name Display name
+     * @param _description Detailed description
+     * @param _baseFine Base fine amount in wei
+     */
+    function addViolationType(
+        uint8 _typeId,
+        string memory _name,
+        string memory _description,
+        uint256 _baseFine
+    ) external onlyOwner {
+        if (violationTypes[_typeId].isActive) revert TypeAlreadyExists();
+
+        violationTypes[_typeId] = ViolationTypeInfo({
+            name: _name,
+            description: _description,
+            baseFine: _baseFine,
+            isActive: true,
+            totalCount: 0
+        });
+
+        activeTypes.push(_typeId);
+        emit ViolationTypeAdded(_typeId, _name, _baseFine);
+    }
+
+    /**
+     * @notice Update base fine for a violation type
+     * @param _typeId Type ID to update
+     * @param _newBaseFine New base fine amount
+     */
+    function updateBaseFine(uint8 _typeId, uint256 _newBaseFine) external onlyOwner validType(_typeId) {
+        violationTypes[_typeId].baseFine = _newBaseFine;
+        emit ViolationTypeUpdated(_typeId, _newBaseFine);
+    }
+
+    /**
+     * @notice Deactivate a violation type
+     * @param _typeId Type ID to deactivate
+     */
+    function deactivateType(uint8 _typeId) external onlyOwner validType(_typeId) {
+        violationTypes[_typeId].isActive = false;
+        emit ViolationTypeDeactivated(_typeId);
+    }
+
+    /**
+     * @notice Reactivate a violation type
+     * @param _typeId Type ID to reactivate
+     */
+    function activateType(uint8 _typeId) external onlyOwner {
+        violationTypes[_typeId].isActive = true;
+        emit ViolationTypeActivated(_typeId);
+    }
+
+    /**
+     * @notice Increment violation count for a type (called by main contract)
+     * @param _typeId Type ID to increment
+     */
+    function incrementCount(uint8 _typeId) external validType(_typeId) {
+        violationTypes[_typeId].totalCount++;
+        emit ViolationCountIncremented(_typeId, violationTypes[_typeId].totalCount);
+    }
+
+    /**
+     * @notice Get violation type information
+     * @param _typeId Type ID to query
+     */
+    function getViolationType(uint8 _typeId) external view validType(_typeId) returns (
+        string memory name,
+        string memory description,
+        uint256 baseFine,
+        uint256 totalCount
+    ) {
+        ViolationTypeInfo memory vType = violationTypes[_typeId];
+        return (vType.name, vType.description, vType.baseFine, vType.totalCount);
+    }
+
+    /**
+     * @notice Check if violation type is valid and active
+     * @param _typeId Type ID to validate
+     */
+    function isValidType(uint8 _typeId) external view returns (bool) {
+        return violationTypes[_typeId].isActive;
+    }
+
+    /**
+     * @notice Get all active violation type IDs
+     */
+    function getActiveTypes() external view returns (uint8[] memory) {
+        uint8 count = 0;
+        for (uint i = 0; i < activeTypes.length; i++) {
+            if (violationTypes[activeTypes[i]].isActive) {
+                count++;
+            }
+        }
+
+        uint8[] memory active = new uint8[](count);
+        uint8 index = 0;
+        for (uint i = 0; i < activeTypes.length; i++) {
+            if (violationTypes[activeTypes[i]].isActive) {
+                active[index] = activeTypes[i];
+                index++;
+            }
+        }
+
+        return active;
+    }
+
+    /**
+     * @notice Get base fine for a specific type
+     * @param _typeId Type ID to query
+     */
+    function getBaseFine(uint8 _typeId) external view validType(_typeId) returns (uint256) {
+        return violationTypes[_typeId].baseFine;
+    }
+
+    /**
+     * @notice Transfer ownership
+     * @param _newOwner New owner address
+     */
+    function transferOwnership(address _newOwner) external onlyOwner {
+        if (_newOwner == address(0)) revert Unauthorized();
+        owner = _newOwner;
+    }
+}
