@@ -12,7 +12,7 @@
 
 **GitHub Repository**: [https://github.com/LonHeidenreich/ViolationHandler](https://github.com/LonHeidenreich/ViolationHandler)
 
-**Video Demo**: [demo.mp4](./demo.mp4)
+**Video Demo**: [demo.mp4]
 
 ---
 
