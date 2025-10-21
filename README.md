@@ -224,7 +224,7 @@ Visit the application in your browser.
 
 ### 5. Watch Demo Video
 
-See [demo.mp4](./demo.mp4) for a complete walkthrough of:
+See [demo.mp4] for a complete walkthrough of:
 - Anonymous violation reporting workflow
 - Encrypted payment submission
 - Privacy features in action
@@ -531,7 +531,7 @@ vercel deploy
 
 ## 🎥 Video Demonstration
 
-Watch **[demo.mp4](./demo.mp4)** to see:
+Watch **[demo.mp4]** to see:
 
 1. **Anonymous Violation Reporting** - Submit violations without revealing identity
 2. **Encrypted Data Flow** - How sensitive data is protected
