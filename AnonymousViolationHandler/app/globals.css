@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --random-color1: #ff6b6b;
+  --random-color2: #4facfe;
+}
+
+body {
+  background: linear-gradient(135deg, var(--random-color1) 0%, var(--random-color2) 100%);
+  min-height: 100vh;
+}

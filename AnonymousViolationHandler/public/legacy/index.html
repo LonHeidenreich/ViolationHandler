@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anonymous Violation Handler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <script>
+        // Fallback for ethers.js
+        if (typeof ethers === 'undefined') {
+            document.write('<script src="https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--random-color1) 0%, var(--random-color2) 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
+        .section {
+            background: #f8f9fa;
+            margin-bottom: 30px;
+            padding: 30px;
+            border-radius: 15px;
+            border-left: 5px solid #667eea;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 600;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .violation-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .violation-type {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+
+        .wallet-info {
+            background: linear-gradient(45deg, #4facfe, #00f2fe);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .wallet-info.disconnected {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Anonymous Violation Handler</h1>
+            <p>Privacy-Protected Traffic Violation Processing Platform using Zama FHE Technology</p>
+        </div>
+
+        <div class="main-content">
+            <div id="walletInfo" class="wallet-info disconnected">
+                <p>Please connect your wallet to use the system</p>
+                <button id="connectWallet" class="btn">Connect MetaMask</button>
+            </div>
+
+            <div class="grid">
+                <div class="section">
+                    <h2>📋 Report Violation</h2>
+                    <form id="reportForm">
+                        <div class="form-group">
+                            <label>License Plate Hash (Anonymized):</label>
+                            <input type="text" id="licenseHash" placeholder="e.g., ABC123, XYZ789, or license plate number" required>
+                            <small style="color: #666;">Enter license plate info - will be converted to anonymous hash automatically</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Violation Type:</label>
+                            <select id="violationType" required>
+                                <option value="">Select violation type</option>
+                                <option value="1">Speeding (0.15 ETH)</option>
+                                <option value="2">Illegal Parking (0.05 ETH)</option>
+                                <option value="3">Red Light Running (0.20 ETH)</option>
+                                <option value="4">No Seatbelt (0.10 ETH)</option>
+                                <option value="5">Mobile Phone Use (0.12 ETH)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Violation Location:</label>
+                            <input type="text" id="location" placeholder="Detailed location information" required>
+                        </div>
+                        <button type="submit" class="btn">Submit Report</button>
+                    </form>
+                    <div id="reportStatus"></div>
+                </div>
+
+                <div class="section">
+                    <h2>💰 Payment Processing</h2>
+                    <div class="form-group">
+                        <label>Violation ID:</label>
+                        <input type="number" id="payViolationId" placeholder="Enter violation ID" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Payment Proof ID (Encrypted):</label>
+                        <input type="text" id="paymentId" placeholder="Enter payment proof ID">
+                    </div>
+                    <button id="submitPayment" class="btn btn-success">Submit Payment Proof</button>
+                    <div id="paymentStatus"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📊 Violation Records Query</h2>
+                <div style="margin-bottom: 20px;">
+                    <input type="number" id="queryId" placeholder="Enter violation ID to query" min="1" style="width: 200px; display: inline-block;">
+                    <button id="queryViolation" class="btn">Query Violation</button>
+                    <button id="loadMyReports" class="btn">My Reports</button>
+                </div>
+                <div id="violationResults"></div>
+            </div>
+
+            <div class="section">
+                <h2>⚙️ Admin Functions</h2>
+                <p style="margin-bottom: 15px;"><strong>Contract Administrator Only</strong></p>
+                <div style="margin-bottom: 15px;">
+                    <input type="number" id="processId" placeholder="Violation ID" min="1" style="width: 150px;">
+                    <button id="processPayment" class="btn btn-danger">Process Payment</button>
+                </div>
+                <div>
+                    <select id="fineType" style="width: 200px;">
+                        <option value="1">Speeding</option>
+                        <option value="2">Illegal Parking</option>
+                        <option value="3">Red Light Running</option>
+                        <option value="4">No Seatbelt</option>
+                        <option value="5">Mobile Phone Use</option>
+                    </select>
+                    <input type="number" id="fineAmount" placeholder="Fine amount (0.001-1000 ETH)" min="0.001" max="1000" step="0.001" style="width: 200px;">
+                    <button id="updateFine" class="btn btn-danger">Update Fine</button>
+                </div>
+                <div id="adminStatus"></div>
+            </div>
+
+            <div class="section">
+                <h2>📈 System Statistics</h2>
+                <div id="systemStats">
+                    <p>Loading statistics...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Generate random colors for background
+        function getRandomColor() {
+            const colors = [
+                '#ff6b6b', '#ee5a24', '#ff9ff3', '#54a0ff', '#5f27cd',
+                '#00d2d3', '#ff9f43', '#10ac84', '#ee5253', '#0abde3',
+                '#3867d6', '#8c7ae6', '#fd79a8', '#fdcb6e', '#6c5ce7',
+                '#a29bfe', '#ffeaa7', '#fab1a0', '#ff7675', '#e17055',
+                '#00b894', '#00cec9', '#0984e3', '#6c5ce7', '#e84393'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // Set random background colors
+        document.documentElement.style.setProperty('--random-color1', getRandomColor());
+        document.documentElement.style.setProperty('--random-color2', getRandomColor());
+
+        // Contract configuration
+        const CONTRACT_ADDRESS = "0xaa6C1DdBd17F6e8baE8A5cb4eB015e7ed34AE3b1";
+        const CONTRACT_ABI = [
+            {
+                "inputs": [],
+                "stateMutability": "nonpayable",
+                "type": "constructor"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {
+                        "indexed": false,
+                        "internalType": "uint8",
+                        "name": "violationType",
+                        "type": "uint8"
+                    },
+                    {
+                        "indexed": false,
+                        "internalType": "uint256",
+                        "name": "newAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "name": "FineAmountUpdated",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {
+                        "indexed": true,
+                        "internalType": "uint32",
+                        "name": "violationId",
+                        "type": "uint32"
+                    },
+                    {
+                        "indexed": false,
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    }
+                ],
+                "name": "PaymentSubmitted",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {
+                        "indexed": true,
+                        "internalType": "uint32",
+                        "name": "violationId",
+                        "type": "uint32"
+                    },
+                    {
+                        "indexed": false,
+                        "internalType": "bool",
+                        "name": "paymentConfirmed",
+                        "type": "bool"
+                    }
+                ],
+                "name": "ViolationProcessed",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [
+                    {
+                        "indexed": true,
+                        "internalType": "uint32",
+                        "name": "violationId",
+                        "type": "uint32"
+                    },
+                    {
+                        "indexed": true,
+                        "internalType": "address",
+                        "name": "reporter",
+                        "type": "address"
+                    },
+                    {
+                        "indexed": false,
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    }
+                ],
+                "name": "ViolationReported",
+                "type": "event"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint8",
+                        "name": "_violationType",
+                        "type": "uint8"
+                    }
+                ],
+                "name": "getBaseFine",
+                "outputs": [
+                    {
+                        "internalType": "uint256",
+                        "name": "",
+                        "type": "uint256"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_violationId",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "getPaymentStatus",
+                "outputs": [
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "verified",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "address",
+                        "name": "_reporter",
+                        "type": "address"
+                    }
+                ],
+                "name": "getReporterViolations",
+                "outputs": [
+                    {
+                        "internalType": "uint32[]",
+                        "name": "",
+                        "type": "uint32[]"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "getTotalViolations",
+                "outputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "",
+                        "type": "uint32"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_violationId",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "getViolationInfo",
+                "outputs": [
+                    {
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPaid",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isProcessed",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "reporter",
+                        "type": "address"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_violationId",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "hasLicenseAccess",
+                "outputs": [
+                    {
+                        "internalType": "bool",
+                        "name": "",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "owner",
+                "outputs": [
+                    {
+                        "internalType": "address",
+                        "name": "",
+                        "type": "address"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "paused",
+                "outputs": [
+                    {
+                        "internalType": "bool",
+                        "name": "",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "payments",
+                "outputs": [
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "verified",
+                        "type": "bool"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_violationId",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "processPayment",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_encryptedLicenseHash",
+                        "type": "uint32"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "_violationType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "string",
+                        "name": "_location",
+                        "type": "string"
+                    }
+                ],
+                "name": "reportViolation",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "address",
+                        "name": "",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "",
+                        "type": "uint256"
+                    }
+                ],
+                "name": "reporterViolations",
+                "outputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "",
+                        "type": "uint32"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "_violationId",
+                        "type": "uint32"
+                    },
+                    {
+                        "internalType": "uint32",
+                        "name": "_encryptedPaymentId",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "submitPayment",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "togglePause",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint8",
+                        "name": "_violationType",
+                        "type": "uint8"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "_newAmount",
+                        "type": "uint256"
+                    }
+                ],
+                "name": "updateViolationFine",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint8",
+                        "name": "",
+                        "type": "uint8"
+                    }
+                ],
+                "name": "violationBaseFines",
+                "outputs": [
+                    {
+                        "internalType": "uint256",
+                        "name": "",
+                        "type": "uint256"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "violationCounter",
+                "outputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "",
+                        "type": "uint32"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {
+                        "internalType": "uint32",
+                        "name": "",
+                        "type": "uint32"
+                    }
+                ],
+                "name": "violations",
+                "outputs": [
+                    {
+                        "internalType": "string",
+                        "name": "location",
+                        "type": "string"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "timestamp",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isPaid",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "bool",
+                        "name": "isProcessed",
+                        "type": "bool"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "reporter",
+                        "type": "address"
+                    }
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+
+        let web3Provider;
+        let contract;
+        let userAccount;
+
+        // Violation type names
+        const violationTypes = {
+            1: "Speeding",
+            2: "Illegal Parking",
+            3: "Red Light Running",
+            4: "No Seatbelt",
+            5: "Mobile Phone Use"
+        };
+
+        // Initialize the application
+        async function init() {
+            if (typeof window.ethereum !== 'undefined') {
+                console.log('MetaMask detected');
+                setupEventListeners();
+                await checkConnection();
+            } else {
+                showStatus('error', 'Please install MetaMask wallet', 'reportStatus');
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('connectWallet').addEventListener('click', connectWallet);
+            document.getElementById('reportForm').addEventListener('submit', reportViolation);
+            document.getElementById('submitPayment').addEventListener('click', submitPayment);
+            document.getElementById('queryViolation').addEventListener('click', queryViolation);
+            document.getElementById('loadMyReports').addEventListener('click', loadMyReports);
+            document.getElementById('processPayment').addEventListener('click', processPayment);
+            document.getElementById('updateFine').addEventListener('click', updateFine);
+        }
+
+        // Check if already connected
+        async function checkConnection() {
+            try {
+                const accounts = await ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    await connectWallet();
+                }
+            } catch (error) {
+                console.error('Error checking connection:', error);
+            }
+        }
+
+        // Connect wallet
+        async function connectWallet() {
+            try {
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                userAccount = accounts[0];
+
+                web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+                contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, web3Provider.getSigner());
+
+                updateWalletInfo();
+                await loadSystemStats();
+                showStatus('success', 'Wallet connected successfully!', 'reportStatus');
+            } catch (error) {
+                showStatus('error', 'Failed to connect wallet: ' + error.message, 'reportStatus');
+            }
+        }
+
+        // Update wallet info display
+        function updateWalletInfo() {
+            const walletInfo = document.getElementById('walletInfo');
+            if (userAccount) {
+                walletInfo.className = 'wallet-info';
+                walletInfo.innerHTML = `
+                    <p><strong>Connected Wallet:</strong> ${userAccount.slice(0, 6)}...${userAccount.slice(-4)}</p>
+                    <p><strong>Network:</strong> Sepolia Testnet</p>
+                `;
+            }
+        }
+
+        // Report violation
+        async function reportViolation(event) {
+            event.preventDefault();
+
+            if (!contract) {
+                showStatus('error', 'Please connect wallet first', 'reportStatus');
+                return;
+            }
+
+            try {
+                const licenseHash = document.getElementById('licenseHash').value;
+                const violationType = parseInt(document.getElementById('violationType').value);
+                const location = document.getElementById('location').value;
+
+                // Validate inputs
+                if (!licenseHash || licenseHash.trim().length === 0) {
+                    showStatus('error', 'Please enter a license plate hash', 'reportStatus');
+                    return;
+                }
+
+                if (!violationType || violationType < 1 || violationType > 5) {
+                    showStatus('error', 'Please select a valid violation type', 'reportStatus');
+                    return;
+                }
+
+                if (!location || location.trim().length === 0) {
+                    showStatus('error', 'Please enter a location', 'reportStatus');
+                    return;
+                }
+
+                showStatus('warning', 'Submitting violation report...', 'reportStatus');
+
+                // Convert license hash to uint32 as expected by the contract
+                let processedLicenseHash;
+                if (licenseHash.startsWith('0x')) {
+                    // If it's a hex string, convert to number and ensure it fits in uint32
+                    const hexValue = parseInt(licenseHash, 16);
+                    processedLicenseHash = hexValue % (2**32); // Ensure it fits in uint32 range
+                } else {
+                    // Convert string to a simple hash number (uint32 range)
+                    let hash = 0;
+                    for (let i = 0; i < licenseHash.length; i++) {
+                        const char = licenseHash.charCodeAt(i);
+                        hash = ((hash << 5) - hash) + char;
+                        hash = hash & hash; // Convert to 32-bit integer
+                    }
+                    processedLicenseHash = Math.abs(hash) % (2**32); // Ensure positive and within uint32 range
+                }
+
+                const tx = await contract.reportViolation(
+                    processedLicenseHash,
+                    violationType,
+                    location
+                );
+
+                showStatus('warning', 'Transaction submitted, waiting for confirmation...', 'reportStatus');
+                await tx.wait();
+
+                showStatus('success', `Violation report submitted successfully! Transaction hash: ${tx.hash}`, 'reportStatus');
+                document.getElementById('reportForm').reset();
+                await loadSystemStats(); // Refresh stats
+
+            } catch (error) {
+                showStatus('error', 'Submission failed: ' + error.message, 'reportStatus');
+            }
+        }
+
+        // Submit payment
+        async function submitPayment() {
+            if (!contract) {
+                showStatus('error', 'Please connect wallet first', 'paymentStatus');
+                return;
+            }
+
+            try {
+                const violationId = parseInt(document.getElementById('payViolationId').value);
+                const paymentId = document.getElementById('paymentId').value;
+
+                showStatus('warning', 'Submitting payment proof...', 'paymentStatus');
+
+                const tx = await contract.submitPayment(violationId, parseInt(paymentId));
+                await tx.wait();
+
+                showStatus('success', `Payment proof submitted successfully! Transaction hash: ${tx.hash}`, 'paymentStatus');
+
+            } catch (error) {
+                showStatus('error', 'Submission failed: ' + error.message, 'paymentStatus');
+            }
+        }
+
+        // Query violation
+        async function queryViolation() {
+            if (!contract) {
+                showStatus('error', 'Please connect wallet first');
+                return;
+            }
+
+            try {
+                const violationId = parseInt(document.getElementById('queryId').value);
+                const result = await contract.getViolationInfo(violationId);
+
+                displayViolationResult({
+                    id: violationId,
+                    location: result[0],
+                    timestamp: new Date(result[1] * 1000).toLocaleString(),
+                    isPaid: result[2],
+                    isProcessed: result[3],
+                    reporter: result[4]
+                });
+
+            } catch (error) {
+                showStatus('error', 'Query failed: ' + error.message);
+            }
+        }
+
+        // Display violation result
+        function displayViolationResult(violation) {
+            const resultsDiv = document.getElementById('violationResults');
+            resultsDiv.innerHTML = `
+                <div class="violation-card">
+                    <h3>Violation ID: #${violation.id}</h3>
+                    <p><strong>Location:</strong> ${violation.location}</p>
+                    <p><strong>Report Time:</strong> ${violation.timestamp}</p>
+                    <p><strong>Payment Status:</strong> <span style="color: ${violation.isPaid ? 'green' : 'red'}">${violation.isPaid ? 'Paid' : 'Unpaid'}</span></p>
+                    <p><strong>Processing Status:</strong> <span style="color: ${violation.isProcessed ? 'green' : 'orange'}">${violation.isProcessed ? 'Processed' : 'Pending'}</span></p>
+                    <p><strong>Reporter:</strong> ${violation.reporter.slice(0, 6)}...${violation.reporter.slice(-4)}</p>
+                </div>
+            `;
+        }
+
+        // Load my reports
+        async function loadMyReports() {
+            if (!contract || !userAccount) {
+                showStatus('error', 'Please connect wallet first');
+                return;
+            }
+
+            try {
+                const reportIds = await contract.getReporterViolations(userAccount);
+                const resultsDiv = document.getElementById('violationResults');
+
+                if (reportIds.length === 0) {
+                    resultsDiv.innerHTML = '<p>You have not submitted any violation reports yet.</p>';
+                    return;
+                }
+
+                resultsDiv.innerHTML = '<h3>My Report Records:</h3>';
+
+                for (let id of reportIds) {
+                    const result = await contract.getViolationInfo(id);
+                    const violationDiv = document.createElement('div');
+                    violationDiv.innerHTML = `
+                        <div class="violation-card">
+                            <h4>Violation ID: #${id.toString()}</h4>
+                            <p><strong>Location:</strong> ${result[0]}</p>
+                            <p><strong>Report Time:</strong> ${new Date(result[1] * 1000).toLocaleString()}</p>
+                            <p><strong>Payment Status:</strong> <span style="color: ${result[2] ? 'green' : 'red'}">${result[2] ? 'Paid' : 'Unpaid'}</span></p>
+                            <p><strong>Processing Status:</strong> <span style="color: ${result[3] ? 'green' : 'orange'}">${result[3] ? 'Processed' : 'Pending'}</span></p>
+                        </div>
+                    `;
+                    resultsDiv.appendChild(violationDiv);
+                }
+
+            } catch (error) {
+                showStatus('error', 'Loading failed: ' + error.message);
+            }
+        }
+
+        // Process payment (admin only)
+        async function processPayment() {
+            if (!contract) {
+                showStatus('error', 'Please connect wallet first', 'adminStatus');
+                return;
+            }
+
+            try {
+                const violationId = parseInt(document.getElementById('processId').value);
+
+                showStatus('warning', 'Processing payment...', 'adminStatus');
+
+                const tx = await contract.processPayment(violationId);
+                await tx.wait();
+
+                showStatus('success', `Payment processed successfully! Transaction hash: ${tx.hash}`, 'adminStatus');
+
+            } catch (error) {
+                showStatus('error', 'Processing failed: ' + error.message, 'adminStatus');
+            }
+        }
+
+        // Update fine amount (admin only)
+        async function updateFine() {
+            if (!contract) {
+                showStatus('error', 'Please connect wallet first', 'adminStatus');
+                return;
+            }
+
+            try {
+                const fineType = parseInt(document.getElementById('fineType').value);
+                const fineAmount = document.getElementById('fineAmount').value;
+
+                // Validate fine amount to prevent overflow
+                const fineAmountNum = parseFloat(fineAmount);
+                if (isNaN(fineAmountNum) || fineAmountNum <= 0 || fineAmountNum > 1000) {
+                    showStatus('error', 'Please enter a valid fine amount (0.001 - 1000 ETH)', 'adminStatus');
+                    return;
+                }
+
+                const amountWei = ethers.utils.parseUnits(fineAmount, 'ether');
+
+                showStatus('warning', 'Updating fine amount...', 'adminStatus');
+
+                const tx = await contract.updateViolationFine(fineType, amountWei);
+                await tx.wait();
+
+                showStatus('success', `Fine amount updated successfully! Transaction hash: ${tx.hash}`, 'adminStatus');
+
+            } catch (error) {
+                showStatus('error', 'Update failed: ' + error.message, 'adminStatus');
+            }
+        }
+
+        // Load system statistics
+        async function loadSystemStats() {
+            if (!contract) return;
+
+            try {
+                const totalViolations = await contract.getTotalViolations();
+                const statsDiv = document.getElementById('systemStats');
+
+                statsDiv.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                        <div style="background: #4facfe; color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                            <h3>${totalViolations}</h3>
+                            <p>Total Violations</p>
+                        </div>
+                        <div style="background: #43e97b; color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                            <h3>FHE</h3>
+                            <p>Privacy Protection</p>
+                        </div>
+                        <div style="background: #fa709a; color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                            <h3>Zama</h3>
+                            <p>Encrypted Computing</p>
+                        </div>
+                        <div style="background: #ff6b6b; color: white; padding: 20px; border-radius: 10px; text-align: center;">
+                            <h3>Sepolia</h3>
+                            <p>Test Network</p>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                document.getElementById('systemStats').innerHTML = '<p>Error loading statistics</p>';
+            }
+        }
+
+        // Show status message
+        function showStatus(type, message, elementId = 'reportStatus') {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+
+            setTimeout(() => {
+                statusDiv.innerHTML = '';
+            }, 10000);
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

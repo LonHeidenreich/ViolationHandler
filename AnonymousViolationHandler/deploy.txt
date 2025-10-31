@@ -1,0 +1,36 @@
+Deployment Instructions for Anonymous Violation Handler
+======================================================
+
+This is a zero-dependency static web application ready for Vercel deployment.
+
+Prerequisites:
+- MetaMask wallet
+- Sepolia testnet access
+- Contract deployed on Sepolia network
+
+Quick Deploy:
+1. Install Vercel CLI: npm i -g vercel
+2. Run: vercel --prod
+
+Or use Vercel Dashboard:
+1. Connect GitHub repository to Vercel
+2. Import project
+3. Deploy automatically
+
+Features:
+- Fully static HTML/CSS/JavaScript
+- Ethers.js loaded via CDN
+- Zero build process required
+- Mobile responsive design
+- Real blockchain interaction only
+- English interface
+- Privacy-focused FHE technology
+
+Contract Functions:
+- Report traffic violations
+- Submit payment proofs
+- Query violation records
+- Admin payment processing
+- Fine amount management
+
+Note: Update CONTRACT_ADDRESS in index.html after deploying your smart contract.
