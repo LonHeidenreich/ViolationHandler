@@ -1,8 +1,8 @@
 # Implementation Summary - Hardhat Development Framework
 
-## Project: Anonymous Violation Handler (dapp134)
+## Project: Anonymous Violation Handler
 
-**Date**: 2024
+ 
 **Framework**: Hardhat with TypeScript support
 **Network**: Sepolia Testnet
 
